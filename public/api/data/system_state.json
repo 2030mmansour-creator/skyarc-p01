@@ -1,0 +1,17 @@
+{
+  "app": "SkyArc Expenses & Custody System",
+  "version": "10.0",
+  "serverVersion": 1,
+  "projects": [],
+  "expenses": [],
+  "custodies": [],
+  "users": [],
+  "roles": [],
+  "workflowStages": [],
+  "settings": {
+    "companyName": "شركة المقاولات العامة",
+    "currencySymbol": "ر.س"
+  },
+  "tickets": [],
+  "notifications": []
+}

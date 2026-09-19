@@ -1,0 +1,15 @@
+{
+  "expenses": [
+    {
+      "id": "EXP-001",
+      "amount": 500,
+      "category": "مواد"
+    }
+  ],
+  "projects": [
+    {
+      "id": "P1",
+      "name": "مشروع الرياض"
+    }
+  ]
+}

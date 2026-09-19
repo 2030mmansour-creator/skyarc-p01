@@ -1,0 +1,41 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # 1. Direct API Routes to PHP scripts
+  RewriteRule ^api/state/?$ api/state.php [L,QSA]
+  RewriteRule ^api/server-info/?$ api/server-info.php [L,QSA]
+  RewriteRule ^api/backup/?$ api/backup.php [L,QSA]
+  RewriteRule ^api/backups/?$ api/backups.php [L,QSA]
+  RewriteRule ^api/restore/?$ api/restore.php [L,QSA]
+  RewriteRule ^api/restore-backup/?$ api/restore.php [L,QSA]
+  RewriteRule ^api/archived-expenses/?$ api/archived-expenses.php [L,QSA]
+
+  # 2. Existing Files and Directories (Serve static assets and PHP files directly)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 3. React SPA Single Page Application Routing
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Security: Prevent viewing directory index
+Options -Indexes
+
+# Security: Prevent direct download of sensitive database files from browser
+<FilesMatch "(\.env|\.log|system_state\.json)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Allow public API php scripts to execute normally
+<FilesMatch "\.php$">
+  <IfModule mod_authz_core.c>
+    Require all granted
+  </IfModule>
+</FilesMatch>

@@ -1,0 +1,20 @@
+{
+  "lastSentDate": "2026-09-19",
+  "lastSentAt": "2026-09-19T07:43:20.366Z",
+  "recipient": "2030m.mansour@gmail.com",
+  "emailEnabled": false,
+  "emailSent": false,
+  "smtpConfigured": false,
+  "mailError": null,
+  "pcloudUploaded": false,
+  "pcloudConfigured": false,
+  "pcloudFiles": [],
+  "pcloudError": null,
+  "excelFileName": "حزمة_مصنف_إكسل_الشامل_2026-09-19.xlsx",
+  "jsonFileName": "نسخة_احتياطية_كاملة_2026-09-19.json",
+  "excelSizeKb": 31,
+  "jsonSizeKb": 176.3,
+  "expensesCount": 2,
+  "projectsCount": 1,
+  "custodiesCount": 2
+}
