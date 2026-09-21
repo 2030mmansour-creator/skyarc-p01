@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // System synchronized state & connection ping
+    match /system_state/{docId} {
+      allow read, write: if true;
+    }
+
+    // Active single-session token per user for instant real-time multi-device eviction
+    match /active_user_sessions/{userId} {
+      allow read, write: if true;
+    }
+
+    // Dedicated attachments archive per project
+    match /project_bonds_archives/{projectId} {
+      allow read, write: if true;
+    }
+
+    // Dedicated expense attachments storage for cross-device and server preview
+    match /expense_attachments/{docId} {
+      allow read, write: if true;
+    }
+
+    // Historical cloud backup snapshots
+    match /cloud_backups/{backupId} {
+      allow read, write: if true;
+    }
+
+    // Core company entities
+    match /projects/{projectId} {
+      allow read, write: if true;
+    }
+
+    match /expenses/{expenseId} {
+      allow read, write: if true;
+    }
+
+    match /custodies/{custodyId} {
+      allow read, write: if true;
+    }
+
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+  }
+}

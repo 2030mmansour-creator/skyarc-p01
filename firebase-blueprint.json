@@ -1,0 +1,148 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "Construction and engineering project details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "client": { "type": "string" },
+        "budget": { "type": "number" },
+        "spent": { "type": "number" },
+        "status": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "location": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Financial expense voucher with receipts and approval workflow",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "voucherNumber": { "type": "string" },
+        "projectId": { "type": "string" },
+        "date": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "voucherNumber", "amount"]
+    },
+    "Custody": {
+      "title": "Custody",
+      "description": "Cash advance and custody management record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "voucherNumber": { "type": "string" },
+        "supervisorId": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "voucherNumber", "amount"]
+    },
+    "User": {
+      "title": "User",
+      "description": "System user account, security roles, and active single-session tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string" },
+        "currentSessionId": { "type": "string" },
+        "lastLoginAt": { "type": "string" },
+        "lastLoginDevice": { "type": "string" }
+      },
+      "required": ["id", "name", "role"]
+    },
+    "UserSession": {
+      "title": "UserSession",
+      "description": "Active single session lock per user to evict concurrent logins in real time",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "activeSessionId": { "type": "string" },
+        "userName": { "type": "string" },
+        "device": { "type": "string" },
+        "loginTime": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "activeSessionId"]
+    },
+    "SystemState": {
+      "title": "SystemState",
+      "description": "Complete centralized database synchronized document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id"]
+    },
+    "ProjectBondsArchive": {
+      "title": "ProjectBondsArchive",
+      "description": "Separate archive file per project containing coded attachments and bonds",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "bondsCount": { "type": "number" }
+      },
+      "required": ["projectId"]
+    },
+    "ExpenseAttachment": {
+      "title": "ExpenseAttachment",
+      "description": "Dedicated attachment document storing data URL or file proxy for cross-device preview",
+      "type": "object",
+      "properties": {
+        "expenseId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "dataUrl": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["expenseId"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Company engineering and contracting projects"
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Expenses and bill receipts"
+    },
+    "/custodies/{custodyId}": {
+      "schema": "Custody",
+      "description": "Custody and petty cash operations"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Company employees and team members"
+    },
+    "/active_user_sessions/{userId}": {
+      "schema": "UserSession",
+      "description": "Active session token and device information for concurrent login eviction"
+    },
+    "/system_state/{stateId}": {
+      "schema": "SystemState",
+      "description": "Central synchronized database state and backup store"
+    },
+    "/project_bonds_archives/{projectId}": {
+      "schema": "ProjectBondsArchive",
+      "description": "Dedicated bonds and attachments archive per project"
+    },
+    "/expense_attachments/{attachmentDocId}": {
+      "schema": "ExpenseAttachment",
+      "description": "Dedicated expense attachments storage for instant preview across devices and servers"
+    }
+  }
+}

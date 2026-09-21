@@ -1,0 +1,6 @@
+{
+  "name": "المصروفات والعهد للمشاريع",
+  "description": "منظومة متطورة لإدارة مصروفات وعهد المشاريع مع الحفظ السحابي المباشر وقاعدة البيانات المركزية، دورة الاعتماد المتعددة المستويات، والتنبيهات الذكية وتصدير التقارير.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
