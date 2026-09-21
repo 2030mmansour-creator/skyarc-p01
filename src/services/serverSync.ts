@@ -899,9 +899,13 @@ export const ServerSyncService = {
           success: true,
           pcloudUploaded: true,
           pcloudConfigured: true,
-          pcloudFiles: pcloudRes.uploadedFiles || [pcloudRes.jsonFileName || 'backup.json'],
-          message: pcloudRes.message || 'تم بنجاح رفع النسخة الاحتياطية إلى سحابة pCloud مباشرة!',
-          jsonFileName: pcloudRes.jsonFileName || `نسخة_احتياطية_${new Date().toISOString().slice(0, 10)}.json`
+          pcloudFiles: pcloudRes.uploadedFiles || [
+            pcloudRes.excelFileName || `حزمة_مصنف_إكسل_الشامل_${new Date().toISOString().slice(0, 10)}.xlsx`,
+            pcloudRes.jsonFileName || `نسخة_احتياطية_كاملة_${new Date().toISOString().slice(0, 10)}.json`
+          ],
+          message: pcloudRes.message || 'تم بنجاح رفع حزمة إكسل والنسخة الاحتياطية إلى سحابة pCloud مباشرة!',
+          excelFileName: pcloudRes.excelFileName || `حزمة_مصنف_إكسل_الشامل_${new Date().toISOString().slice(0, 10)}.xlsx`,
+          jsonFileName: pcloudRes.jsonFileName || `نسخة_احتياطية_كاملة_${new Date().toISOString().slice(0, 10)}.json`
         };
       }
     }
@@ -974,7 +978,7 @@ export const ServerSyncService = {
       // Server endpoint not reachable, fallback to direct browser upload below
     }
 
-    // 2. Direct browser upload fallback (works on any static or shared server!)
+    // 2. Direct browser upload fallback (works on any static, Vercel, or serverless environment!)
     if (link) {
       try {
         const code = PCloudService.extractCode(link);
@@ -982,18 +986,38 @@ export const ServerSyncService = {
           const state = fullState || StorageService.load() || {};
           const dateStr = new Date().toISOString().slice(0, 10);
           const jsonFileName = `نسخة_احتياطية_كاملة_${dateStr}.json`;
+          const excelFileName = `حزمة_مصنف_إكسل_الشامل_${dateStr}.xlsx`;
+
+          // Generate JSON Backup
           const jsonString = JSON.stringify(state, null, 2);
           const jsonBlob = new Blob([jsonString], { type: 'application/json' });
 
-          const uploadRes = await PCloudService.uploadFileToLinkDirect(code, jsonFileName, jsonBlob);
-          if (uploadRes.success) {
+          // Generate Comprehensive Excel Workbook (.xlsx)
+          const excelBlob = StorageService.generateComprehensiveExcelBlob(state);
+
+          // Upload both files to pCloud Upload Link
+          const uploadedFiles: string[] = [];
+          const [resExcel, resJson] = await Promise.allSettled([
+            PCloudService.uploadFileToLinkDirect(code, excelFileName, excelBlob),
+            PCloudService.uploadFileToLinkDirect(code, jsonFileName, jsonBlob)
+          ]);
+
+          if (resExcel.status === 'fulfilled' && resExcel.value.success) {
+            uploadedFiles.push(excelFileName);
+          }
+          if (resJson.status === 'fulfilled' && resJson.value.success) {
+            uploadedFiles.push(jsonFileName);
+          }
+
+          if (uploadedFiles.length > 0) {
             return {
               success: true,
               pcloudUploaded: true,
-              uploadedFiles: [jsonFileName],
+              uploadedFiles,
               dateStr,
+              excelFileName,
               jsonFileName,
-              message: `تم بنجاح رفع النسخة الاحتياطية (${jsonFileName}) مباشرة من المتصفح إلى مجلد pCloud السحابي الخاص بك بدون كلمة سر!`
+              message: `تم بنجاح رفع ${uploadedFiles.join(' و ')} مباشرة من المتصفح إلى مجلد pCloud السحابي الخاص بك بدون كلمة سر!`
             };
           } else {
             // Check if publink

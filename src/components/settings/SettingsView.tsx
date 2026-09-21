@@ -3495,15 +3495,15 @@ export const SettingsView: React.FC = () => {
                     <h5 className="text-xs font-bold text-slate-900 dark:text-white">
                       1. حزمة مصنف إكسل الشامل (.xlsx)
                     </h5>
-                    <a
-                      href="/api/backup/download-daily/excel"
-                      download="حزمة_مصنف_إكسل_الشامل_اليومية.xlsx"
-                      className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1"
-                      title="تحميل نسخة الآن"
+                    <button
+                      type="button"
+                      onClick={handleExportExcel}
+                      className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer bg-transparent border-none p-0"
+                      title="تحميل نسخة إكسل الآن"
                     >
                       <Download className="w-3 h-3" />
                       <span>تحميل</span>
-                    </a>
+                    </button>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                     يضم كافة أوراق العمل: المصروفات مع بيانات التدقيق، العهد المسلمة، أرصدة المشرفين، المشاريع والميزانيات، والمستخدمين.
@@ -3521,15 +3521,15 @@ export const SettingsView: React.FC = () => {
                     <h5 className="text-xs font-bold text-slate-900 dark:text-white">
                       2. نسخة احتياطية كاملة (JSON)
                     </h5>
-                    <a
-                      href="/api/backup/download-daily/json"
-                      download="نسخة_احتياطية_كاملة_اليومية.json"
-                      className="text-[11px] font-bold text-blue-700 dark:text-blue-400 hover:underline flex items-center gap-1"
-                      title="تحميل نسخة الآن"
+                    <button
+                      type="button"
+                      onClick={handleExportJSON}
+                      className="text-[11px] font-bold text-blue-700 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer bg-transparent border-none p-0"
+                      title="تحميل نسخة JSON الآن"
                     >
                       <Download className="w-3 h-3" />
                       <span>تحميل</span>
-                    </a>
+                    </button>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                     ملف رقمي موثق وشامل لكافة قواعد النظام، جاهز للاسترجاع الفوري التام عند أي طارئ من شاشة الاستعادة.

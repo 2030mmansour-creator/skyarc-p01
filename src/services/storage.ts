@@ -2346,7 +2346,7 @@ export const StorageService = {
       'الدور الوظيفي': u.role,
       'البريد الإلكتروني': u.email,
       'رقم الجوال': u.phone || '-',
-      'الحالة': u.isActive ? 'نشط' : 'معطل',
+      'الحالة': (u as any).isActive !== false ? 'نشط' : 'معطل',
     }));
     const wsUsers = XLSX.utils.json_to_sheet(usersData);
     XLSX.utils.book_append_sheet(wb, wsUsers, 'المستخدمين');
@@ -2437,6 +2437,162 @@ export const StorageService = {
       roles: this.getRoles(),
       archivedExpenses: this.getArchivedExpenses()
     };
+  },
+
+  // Generate comprehensive Excel workbook blob for browser-based upload & download
+  generateComprehensiveExcelBlob(stateInput?: any): Blob {
+    const wb = XLSX.utils.book_new();
+    const state = stateInput || this.getFullState();
+    const currencySymbol = state?.settings?.currencySymbol || this.getSettings()?.currencySymbol || 'ر.س';
+
+    const projects: Project[] = Array.isArray(state?.projects) ? state.projects : this.getProjects();
+    const expenses: Expense[] = Array.isArray(state?.expenses) ? state.expenses : this.getExpenses();
+    const custodies: CustodyRecord[] = Array.isArray(state?.custodies) ? state.custodies : this.getCustodies();
+    const allUsers: User[] = Array.isArray(state?.users) ? state.users : this.getUsers();
+    const allRoles = Array.isArray(state?.roles) ? state.roles : this.getRoles();
+
+    // 1. Sheet: Expenses (المصروفات)
+    const expensesData = expenses.map(e => ({
+      'رقم السند': e.id,
+      'التاريخ': e.date,
+      'وقت البصمة': e.fingerprintTime ? new Date(e.fingerprintTime).toLocaleString('ar-SA') : '-',
+      'المشروع': e.projectName,
+      'المشرف': e.supervisorName,
+      'بريد المشرف': e.supervisorEmail,
+      'البند': e.category,
+      'التفاصيل والبيان': e.details,
+      [`المبلغ (${currencySymbol})`]: e.amount,
+      [`الضريبة (${currencySymbol})`]: e.taxAmount || 0,
+      'رقم الفاتورة': e.invoiceNumber || '-',
+      'حالة الاعتماد النهائية': e.status,
+      'اعتماد مدير المشروع': e.projectManagerApproval || 'غير معتمد',
+      'ملاحظات مدير المشروع': e.projectManagerNotes || '-',
+      'اعتماد المحاسب': e.accountantApproval,
+      'ملاحظات المحاسب': e.accountantNotes || '-',
+      'حالة الترحيل المحاسبي': e.erpPostingStatus || 'غير مرحل',
+      'برنامج المحاسبة الخارجي': e.erpSystemName || '-',
+      'رقم القيد الخارجي': e.erpReferenceNumber || '-',
+      'اعتماد الإدارة': e.managementApproval,
+      'ملاحظات الإدارة': e.managementNotes || '-',
+      'إحداثيات الموقع GPS': e.gpsLocation ? `${e.gpsLocation.lat.toFixed(5)}, ${e.gpsLocation.lng.toFixed(5)}` : '-',
+      'حالة المزامنة': e.synced ? 'متزامن سحابياً' : 'محلي (معلق)',
+    }));
+    const wsExpenses = XLSX.utils.json_to_sheet(expensesData.length > 0 ? expensesData : [{ 'تنبيه': 'لا توجد مصروفات مسجلة حتى الآن' }]);
+    XLSX.utils.book_append_sheet(wb, wsExpenses, 'المصروفات');
+
+    // 2. Sheet: Custodies (العهد المسلمة)
+    const custodiesData = custodies.map(c => ({
+      'رقم إيصال العهدة': c.id,
+      'التاريخ': c.date,
+      'اسم المشرف المستلم': c.supervisorName,
+      'البريد الإلكتروني': c.supervisorEmail,
+      [`المبلغ المسلم (${currencySymbol})`]: c.amount,
+      'طريقة الدفع': c.paymentMethod,
+      'رقم الحوالة / السند': c.receiptNumber || '-',
+      'ملاحظات': c.notes || '-',
+      'المسلم بواسطة': c.issuedBy || 'الإدارة',
+    }));
+    const wsCustodies = XLSX.utils.json_to_sheet(custodiesData.length > 0 ? custodiesData : [{ 'تنبيه': 'لا توجد عهد مسجلة' }]);
+    XLSX.utils.book_append_sheet(wb, wsCustodies, 'العهد المسلمة');
+
+    // 3. Sheet: Supervisor Balances (أرصدة المشرفين والعهد)
+    const supervisors = allUsers.filter(u => u.role === 'مشرف' || (u as any).roleId === 'role_supervisor' || u.role === 'مدير مشروع');
+    const supData = supervisors.map(s => {
+      const sCustody = custodies.filter(c => c.supervisorEmail === s.email).reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+      const sApproved = expenses.filter(e => e.supervisorEmail === s.email && e.status === 'معتمد').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      const sPending = expenses.filter(e => e.supervisorEmail === s.email && e.status !== 'معتمد' && e.status !== 'مرفوض').reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      return {
+        'الاسم': s.name,
+        'البريد الإلكتروني': s.email,
+        'رقم الجوال': s.phone || '-',
+        [`إجمالي العهد المسلمة (${currencySymbol})`]: sCustody,
+        [`المصروفات المعتمدة (${currencySymbol})`]: sApproved,
+        [`المصروفات قيد المراجعة (${currencySymbol})`]: sPending,
+        [`الرصيد المتبقي حالياً (${currencySymbol})`]: sCustody - (sApproved + sPending),
+        'حالة العهدة': (sCustody - (sApproved + sPending)) < 0 ? 'عجز في العهدة' : 'متزن'
+      };
+    });
+    const wsSup = XLSX.utils.json_to_sheet(supData.length > 0 ? supData : [{ 'تنبيه': 'لا يوجد مشرفين مسجلين' }]);
+    XLSX.utils.book_append_sheet(wb, wsSup, 'أرصدة المشرفين والعهد');
+
+    // 4. Sheet: Projects (المشاريع)
+    const prjData = projects.map(p => {
+      const prjExpenses = expenses.filter(e => e.projectId === p.id && e.status === 'معتمد');
+      const spent = prjExpenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+      return {
+        'كود المشروع': p.code || '-',
+        'اسم المشروع': p.name,
+        'الحالة': p.status,
+        'العميل / المالك': p.clientName || '-',
+        'الموقع': p.location || '-',
+        [`الميزانية المرصودة (${currencySymbol})`]: p.budget || 0,
+        [`إجمالي المنصرف المعتمد (${currencySymbol})`]: spent,
+        [`المتبقي من الميزانية (${currencySymbol})`]: (p.budget || 0) - spent,
+        'نسبة الاستهلاك': `${Math.round((spent / (p.budget || 1)) * 100)}%`,
+        'المشرفين': p.emails,
+      };
+    });
+    const wsPrj = XLSX.utils.json_to_sheet(prjData.length > 0 ? prjData : [{ 'تنبيه': 'لا توجد مشاريع مسجلة' }]);
+    XLSX.utils.book_append_sheet(wb, wsPrj, 'المشاريع');
+
+    // 5. Sheet: Users (المستخدمين)
+    const usersData = allUsers.map(u => ({
+      'اسم الدخول': u.username || '-',
+      'الاسم الكامل': u.name,
+      'الدور الوظيفي': u.role,
+      'البريد الإلكتروني': u.email,
+      'رقم الجوال': u.phone || '-',
+      'الحالة': (u as any).isActive !== false ? 'نشط' : 'معطل',
+    }));
+    const wsUsers = XLSX.utils.json_to_sheet(usersData.length > 0 ? usersData : [{ 'تنبيه': 'لا يوجد مستخدمين' }]);
+    XLSX.utils.book_append_sheet(wb, wsUsers, 'المستخدمين');
+
+    // 6. Sheet: Roles (الأدوار والصلاحيات)
+    const rolesData = allRoles.map((r: any) => ({
+      'معرف الدور': r.id,
+      'اسم الدور': r.name,
+      'النوع': r.isSystem ? 'دور نظامي' : 'مخصص',
+      'الوصف': r.description || '-',
+      'مهلة التعديل (دقائق)': r.gracePeriodMinutes ?? '-',
+    }));
+    const wsRoles = XLSX.utils.json_to_sheet(rolesData.length > 0 ? rolesData : [{ 'تنبيه': 'لا توجد أدوار إضافية' }]);
+    XLSX.utils.book_append_sheet(wb, wsRoles, 'الأدوار والصلاحيات');
+
+    // 7. Sheet: Backup Info (معلومات التصدير والنسخة الاحتياطية)
+    const totalExpensesAmount = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    const totalCustodiesAmount = custodies.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+    const infoData = [
+      { 'البيان': 'نوع الملف', 'القيمة': 'حزمة مصنف إكسل الشامل (.xlsx) - النسخة الاحتياطية المعتمدة' },
+      { 'البيان': 'تاريخ ووقت التصدير', 'القيمة': new Date().toLocaleString('ar-SA') },
+      { 'البيان': 'إجمالي المشاريع', 'القيمة': projects.length },
+      { 'البيان': 'إجمالي المصروفات', 'القيمة': expenses.length },
+      { 'البيان': `إجمالي قيمة المصروفات (${currencySymbol})`, 'القيمة': totalExpensesAmount },
+      { 'البيان': 'إجمالي العهد المسلمة', 'القيمة': custodies.length },
+      { 'البيان': `إجمالي قيمة العهد المسلمة (${currencySymbol})`, 'القيمة': totalCustodiesAmount },
+      { 'البيان': 'إجمالي المستخدمين', 'القيمة': allUsers.length },
+      { 'البيان': 'العملة المعتمدة', 'القيمة': currencySymbol },
+      { 'البيان': 'النظام والإصدار', 'القيمة': 'SkyArc Financial & Custody System v10.0' }
+    ];
+    const wsInfo = XLSX.utils.json_to_sheet(infoData);
+    XLSX.utils.book_append_sheet(wb, wsInfo, 'معلومات التصدير');
+
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    return new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  },
+
+  // Download comprehensive Excel directly in browser
+  downloadComprehensiveExcel(stateInput?: any, customFileName?: string): void {
+    const blob = this.generateComprehensiveExcelBlob(stateInput);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const fileName = customFileName || `حزمة_مصنف_إكسل_الشامل_${dateStr}.xlsx`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   },
 
   load(): Record<string, any> {
