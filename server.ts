@@ -1641,6 +1641,88 @@ app.post(['/api/pcloud/test-upload-link', '/api/pcloud/test-upload-link.php'], a
   }
 });
 
+// Proxy endpoint to upload a file (e.g. from camera/gallery) to pCloud
+app.post(['/api/pcloud/upload-file', '/api/pcloud/upload-file.php'], async (req, res) => {
+  try {
+    const { link, code, fileName, dataUrl, region = 'us' } = req.body || {};
+    const targetLinkOrCode = String(link || code || '').trim();
+    if (!targetLinkOrCode) {
+      return res.status(400).json({ success: false, error: 'رابط أو كود مجلد pCloud مطلوب للرفع' });
+    }
+
+    if (!dataUrl || typeof dataUrl !== 'string') {
+      return res.status(400).json({ success: false, error: 'بيانات الصورة (dataUrl) مطلوبة للرفع' });
+    }
+
+    const cleanCode = extractPCloudCode(targetLinkOrCode);
+    if (!cleanCode) {
+      return res.status(400).json({ success: false, error: 'كود مجلد pCloud غير صالح' });
+    }
+
+    // Convert dataUrl to buffer
+    const base64Data = dataUrl.replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    const safeFileName = String(fileName || `photo_${Date.now()}.jpg`).trim();
+
+    // 1. Try uploading to File Request / Upload Link
+    const uploadRes = await uploadFileToPCloudLink(cleanCode, safeFileName, buffer, region as 'us' | 'eu');
+    if (uploadRes.success) {
+      const fileMeta = uploadRes.data?.metadata?.[0] || uploadRes.data?.metadata || uploadRes.data || {};
+      const fileId = fileMeta.fileid || uploadRes.data?.fileids?.[0];
+      const assignedRegion = uploadRes.region || region || 'us';
+
+      const downloadUrl = fileId
+        ? `/api/pcloud/file-proxy?code=${encodeURIComponent(cleanCode)}&fileid=${fileId}&region=${assignedRegion}&filename=${encodeURIComponent(safeFileName)}`
+        : `/api/pcloud/file-proxy?code=${encodeURIComponent(cleanCode)}&filename=${encodeURIComponent(safeFileName)}&region=${assignedRegion}`;
+      
+      const thumbUrl = fileId
+        ? `/api/pcloud/file-proxy?code=${encodeURIComponent(cleanCode)}&fileid=${fileId}&region=${assignedRegion}&size=320x320&filename=${encodeURIComponent(safeFileName)}`
+        : undefined;
+
+      return res.json({
+        success: true,
+        fileId,
+        code: cleanCode,
+        region: assignedRegion,
+        fileName: safeFileName,
+        fileSize: buffer.length,
+        downloadUrl,
+        thumbUrl,
+        message: 'تم رفع الصورة إلى مجلد pCloud بنجاح'
+      });
+    }
+
+    // 2. If token configured in settings or env, try token upload
+    const token = (cachedState?.settings?.pcloudAccessToken || process.env.PCLOUD_ACCESS_TOKEN || '').trim();
+    if (token) {
+      const tokenRes = await uploadFileWithPCloudToken(token, 0, safeFileName, buffer, region as 'us' | 'eu');
+      if (tokenRes.success) {
+        const fileMeta = tokenRes.data?.metadata?.[0] || tokenRes.data?.metadata || {};
+        const fileId = fileMeta.fileid;
+        return res.json({
+          success: true,
+          fileId,
+          code: cleanCode,
+          region: tokenRes.region || region,
+          fileName: safeFileName,
+          fileSize: buffer.length,
+          downloadUrl: fileId ? `/api/pcloud/file-proxy?code=${encodeURIComponent(cleanCode)}&fileid=${fileId}&filename=${encodeURIComponent(safeFileName)}` : '',
+          message: 'تم رفع الصورة عبر رمز وصول pCloud بنجاح'
+        });
+      }
+    }
+
+    return res.status(400).json({
+      success: false,
+      isPubLink: uploadRes.isPubLink,
+      error: uploadRes.error || 'فشل رفع الصورة إلى مجلد pCloud'
+    });
+  } catch (err: any) {
+    console.error('Error in /api/pcloud/upload-file:', err);
+    res.status(500).json({ success: false, error: err?.message || 'خطأ أثناء رفع الصورة إلى pCloud' });
+  }
+});
+
 // List contents of a pCloud public folder
 app.all('/api/pcloud/list-folder', async (req, res) => {
   try {

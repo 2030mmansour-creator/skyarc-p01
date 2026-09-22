@@ -107,15 +107,27 @@ export const PCloudService = {
 
   /**
    * Directly upload a file blob to pCloud File Request upload link from browser
+   * with server proxy fallback
    */
   async uploadFileToLinkDirect(
-    code: string,
+    codeOrLink: string,
     fileName: string,
-    blob: Blob
-  ): Promise<{ success: boolean; data?: any; region?: 'us' | 'eu'; error?: string }> {
-    const cleanCode = this.extractCode(code);
+    blob: Blob,
+    dataUrlFallback?: string
+  ): Promise<{ 
+    success: boolean; 
+    data?: any; 
+    region?: 'us' | 'eu'; 
+    fileId?: number | string;
+    downloadUrl?: string;
+    thumbUrl?: string;
+    isPubLink?: boolean;
+    error?: string; 
+  }> {
+    const cleanCode = this.extractCode(codeOrLink);
     if (!cleanCode) return { success: false, error: 'كود pCloud غير صالح' };
 
+    // 1. First attempt: Direct browser upload via pCloud UploadLink API (US then EU)
     for (const reg of ['us', 'eu'] as const) {
       const baseApi = reg === 'eu' ? 'https://eapi.pcloud.com' : 'https://api.pcloud.com';
       try {
@@ -131,7 +143,23 @@ export const PCloudService = {
         if (res.ok) {
           const json = await res.json();
           if (json.result === 0) {
-            return { success: true, data: json, region: reg };
+            const fileMeta = json.metadata?.[0] || json.metadata || json;
+            const fileId = fileMeta.fileid || json.fileids?.[0];
+            const downloadUrl = fileId
+              ? `/api/pcloud/file-proxy?code=${encodeURIComponent(cleanCode)}&fileid=${fileId}&region=${reg}&filename=${encodeURIComponent(fileName)}`
+              : `/api/pcloud/file-proxy?code=${encodeURIComponent(cleanCode)}&filename=${encodeURIComponent(fileName)}&region=${reg}`;
+            const thumbUrl = fileId
+              ? `/api/pcloud/file-proxy?code=${encodeURIComponent(cleanCode)}&fileid=${fileId}&region=${reg}&size=320x320&filename=${encodeURIComponent(fileName)}`
+              : undefined;
+
+            return {
+              success: true,
+              data: json,
+              region: reg,
+              fileId,
+              downloadUrl,
+              thumbUrl
+            };
           }
         }
       } catch (err) {
@@ -139,7 +167,103 @@ export const PCloudService = {
       }
     }
 
-    return { success: false, error: 'فشل رفع الملف إلى مجلد pCloud مباشرة من المتصفح.' };
+    // 2. Second attempt: Upload via server-side proxy endpoint
+    try {
+      let dataUrlToSend = dataUrlFallback;
+      if (!dataUrlToSend) {
+        dataUrlToSend = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      const proxyRes = await fetch('/api/pcloud/upload-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          link: codeOrLink,
+          code: cleanCode,
+          fileName,
+          dataUrl: dataUrlToSend
+        })
+      });
+
+      if (proxyRes.ok) {
+        const json = await proxyRes.json();
+        if (json.success) {
+          return {
+            success: true,
+            data: json,
+            region: json.region || 'us',
+            fileId: json.fileId,
+            downloadUrl: json.downloadUrl,
+            thumbUrl: json.thumbUrl
+          };
+        } else if (json.error) {
+          return {
+            success: false,
+            isPubLink: json.isPubLink,
+            error: json.error
+          };
+        }
+      }
+    } catch (proxyErr) {
+      console.warn('[PCloudService] Server proxy upload error:', proxyErr);
+    }
+
+    return { success: false, error: 'فشل رفع الملف إلى مجلد pCloud. تأكد من أن الرابط هو رابط طلب ملفات (File Request) أو سريان الاتصال.' };
+  },
+
+  /**
+   * Uploads an image (e.g. from camera) to pCloud and returns a ready-to-use ExpenseAttachment
+   */
+  async uploadImageToPCloudAndCreateAttachment(
+    pcloudLinkOrCode: string,
+    fileName: string,
+    blob: Blob,
+    dataUrlFallback?: string
+  ): Promise<{ success: boolean; attachment?: ExpenseAttachment; isPubLink?: boolean; error?: string }> {
+    const cleanCode = this.extractCode(pcloudLinkOrCode);
+    if (!cleanCode) {
+      return { success: false, error: 'لم يتم تحديد رابط مجلد pCloud صالح' };
+    }
+
+    const uploadRes = await this.uploadFileToLinkDirect(cleanCode, fileName, blob, dataUrlFallback);
+    if (!uploadRes.success) {
+      return {
+        success: false,
+        isPubLink: uploadRes.isPubLink,
+        error: uploadRes.error || 'فشل رفع الصورة إلى مجلد pCloud'
+      };
+    }
+
+    const fileId = uploadRes.fileId || Date.now();
+    const region = uploadRes.region || 'us';
+    const downloadUrl = uploadRes.downloadUrl || `/api/pcloud/file-proxy?code=${encodeURIComponent(cleanCode)}&fileid=${fileId}&region=${region}&filename=${encodeURIComponent(fileName)}`;
+    const thumbUrl = uploadRes.thumbUrl || downloadUrl;
+    const directWebUrl = `https://u.pcloud.link/publink/show?code=${encodeURIComponent(cleanCode)}`;
+
+    const attachment: ExpenseAttachment = {
+      id: `pcloud-cam-${fileId}-${Math.random().toString(36).substring(2, 6)}`,
+      url: downloadUrl,
+      fileName,
+      fileType: 'image',
+      fileSize: blob.size,
+      uploadedAt: new Date().toISOString(),
+      source: 'pcloud',
+      pcloudFileId: fileId,
+      pcloudPublicCode: cleanCode,
+      pcloudDownloadUrl: downloadUrl,
+      pcloudThumbUrl: thumbUrl,
+      pcloudWebUrl: directWebUrl
+    };
+
+    return {
+      success: true,
+      attachment
+    };
   },
 
   /**

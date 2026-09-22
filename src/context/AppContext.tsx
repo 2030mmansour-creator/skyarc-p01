@@ -760,6 +760,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Helper to apply incoming cloud state cleanly without triggering outgoing sync loop
   const applyAuthoritativeCloudState = useCallback((cloudData: any) => {
     if (!cloudData || typeof cloudData !== 'object') return false;
+
+    // Concurrency Protection: If the user just performed a local action (e.g. approving/updating an expense)
+    // within the last 4.5 seconds, do not let an older incoming snapshot overwrite local changes
+    const timeSinceLastLocalWrite = Date.now() - lastLocalWriteTimeRef.current;
+    if (timeSinceLastLocalWrite < 4500) {
+      console.log(`[Sync Guard] Skipping incoming state snapshot (${timeSinceLastLocalWrite}ms since last local mutation) to prevent race condition overwrite.`);
+      return false;
+    }
+
     isApplyingCloudDataRef.current = true;
     try {
       const ok = StorageService.importBackupData(cloudData, 'replace');

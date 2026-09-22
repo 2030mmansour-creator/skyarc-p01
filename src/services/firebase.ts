@@ -529,7 +529,7 @@ const pendingProjectAttachments = new Map<string, Record<string, any>>();
 
 // Differential Sync Cache & Micro-Batching Constants
 const MICRO_BATCH_SIZE = 40; // Small lightweight sequential packet size for high stability on weak connections
-const EXPENSES_CHUNK_SIZE = 200;
+const EXPENSES_CHUNK_SIZE = 40; // Reduced to 40 to strictly keep document sizes well within Firestore's 1MB limit
 
 export interface DifferentialSyncDelta {
   isFullSync: boolean;
@@ -760,21 +760,24 @@ export function prepareCentralStatePayload(data: any): any {
         const hasAttachments = Boolean(Array.isArray(e.attachments) && e.attachments.length > 0);
         
         if (hasPhoto || hasAttachments) {
-          // Keep invoicePhoto in central state only if under 80KB and not a huge PDF dataUrl
-          const isHeavyPhoto = Boolean(e.invoicePhoto && (e.invoicePhoto.length > 80000 || e.invoicePhoto.startsWith('data:application/pdf')));
-          const safePhoto = isHeavyPhoto ? '' : (e.invoicePhoto || '');
+          // Strictly strip any Base64 data: URLs from central state document to prevent Firestore 1MB quota breach
+          // External URLs (pCloud, http/https, /api/pcloud/...) are retained seamlessly
+          const isBase64Photo = Boolean(e.invoicePhoto && (e.invoicePhoto.startsWith('data:') || e.invoicePhoto.length > 1000));
+          const safePhoto = isBase64Photo ? '' : (e.invoicePhoto || '');
 
           const safeAttachments = Array.isArray(e.attachments)
             ? e.attachments.map((att: any) => ({
                 ...att,
-                url: (att.url && (att.url.length > 80000 || att.url.startsWith('data:application/pdf'))) ? '' : att.url
+                url: (att.url && (att.url.startsWith('data:') || att.url.length > 1000)) ? '' : (att.url || '')
               }))
             : e.attachments;
+
+          const isBase64InvoiceUrl = Boolean(e.invoice_url && (e.invoice_url.startsWith('data:') || e.invoice_url.length > 1000));
 
           return {
             ...e,
             invoicePhoto: safePhoto,
-            invoice_url: isHeavyPhoto ? (e.invoice_url || '') : (e.invoice_url || safePhoto),
+            invoice_url: isBase64InvoiceUrl ? safePhoto : (e.invoice_url || safePhoto),
             attachments: safeAttachments,
             hasAttachment: true,
             attachmentsCount: e.attachments?.length || 1

@@ -32,9 +32,11 @@ import {
   Trash2,
   Paperclip,
   Cloud,
-  Link2
+  Link2,
+  Loader2
 } from 'lucide-react';
 import { PCloudMediaPickerModal } from '../common/PCloudMediaPickerModal';
+import { PCloudService } from '../../services/pcloudService';
 
 export const ExpenseModal: React.FC = () => {
   const {
@@ -94,6 +96,14 @@ export const ExpenseModal: React.FC = () => {
   const [isCapturingGps, setIsCapturingGps] = useState<boolean>(false);
   const [gpsError, setGpsError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isUploadingToPCloud, setIsUploadingToPCloud] = useState<boolean>(false);
+  const [uploadStatusMsg, setUploadStatusMsg] = useState<string>('');
+
+  // Active project pCloud link helper
+  const activePCloudFolderUrl = useMemo(() => {
+    const proj = projects.find(p => p.id === projectId);
+    return proj?.pcloudPublicFolderUrl || settings.pcloudPublicFolderUrl || settings.pcloudBackupFolderUrl || '';
+  }, [projects, projectId, settings.pcloudPublicFolderUrl, settings.pcloudBackupFolderUrl]);
 
   // Helper functions for VAT logic
   const isTaxInvoiceCategory = (cat: string): boolean => {
@@ -379,61 +389,132 @@ export const ExpenseModal: React.FC = () => {
     );
   };
 
-  // Handle Camera Capture (Single live photo)
+  // Helper to convert dataUrl to Blob
+  const dataUrlToBlob = async (dataUrl: string): Promise<Blob> => {
+    const res = await fetch(dataUrl);
+    return await res.blob();
+  };
+
+  // Handle Camera Capture (Direct Camera-to-pCloud with Instant Selection)
   const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      try {
-        const compressed = await compressImageFile(file, 1280, 1280, 0.72);
+    if (!file) return;
+
+    const timeStr = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeName = `فاتورة_كاميرا_${timeStr}.jpg`;
+
+    try {
+      // 1. Compress image for high visual clarity and light weight
+      const compressedDataUrl = await compressImageFile(file, 1280, 1280, 0.72);
+      const imageBlob = await dataUrlToBlob(compressedDataUrl);
+
+      // 2. Check if a pCloud folder link is configured (project or general)
+      const pcloudLink = activePCloudFolderUrl.trim();
+
+      if (pcloudLink) {
+        setIsUploadingToPCloud(true);
+        setUploadStatusMsg('جاري رفع صورة الكاميرا مباشرة إلى مجلد pCloud السحابي...');
+
+        const uploadResult = await PCloudService.uploadImageToPCloudAndCreateAttachment(
+          pcloudLink,
+          safeName,
+          imageBlob,
+          compressedDataUrl
+        );
+
+        setIsUploadingToPCloud(false);
+        setUploadStatusMsg('');
+
+        if (uploadResult.success && uploadResult.attachment) {
+          addAttachments([uploadResult.attachment]);
+          showAlert(
+            'تم الرفع بنجاح إلى pCloud',
+            'تم التقاط الصورة بالكاميرا ورفعها تلقائياً إلى مجلد pCloud واختيارها كمرفق للسند.',
+            'success'
+          );
+          e.target.value = '';
+          return;
+        } else {
+          console.warn('pCloud direct camera upload failed, falling back to local vault:', uploadResult.error);
+        }
+      }
+
+      // Fallback: Local attachment if pCloud is not configured or failed
+      const newAtt: ExpenseAttachment = {
+        id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        url: compressedDataUrl,
+        fileName: safeName,
+        fileType: 'image',
+        fileSize: imageBlob.size,
+        uploadedAt: new Date().toISOString()
+      };
+      addAttachments([newAtt]);
+    } catch (err: any) {
+      console.warn('Camera capture error, attempting raw reader fallback:', err);
+      setIsUploadingToPCloud(false);
+      setUploadStatusMsg('');
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const rawDataUrl = reader.result as string;
         const newAtt: ExpenseAttachment = {
           id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          url: compressed,
-          fileName: file.name || `صورة_كاميرا_${new Date().toISOString().slice(0, 10)}.jpg`,
+          url: rawDataUrl,
+          fileName: safeName,
           fileType: 'image',
           fileSize: file.size,
           uploadedAt: new Date().toISOString()
         };
         addAttachments([newAtt]);
-      } catch (err) {
-        console.warn('Compression fallback:', err);
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const newAtt: ExpenseAttachment = {
-            id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            url: reader.result as string,
-            fileName: file.name || `صورة_كاميرا_${new Date().toISOString().slice(0, 10)}.jpg`,
-            fileType: 'image',
-            fileSize: file.size,
-            uploadedAt: new Date().toISOString()
-          };
-          addAttachments([newAtt]);
-        };
-        reader.readAsDataURL(file);
-      }
+      };
+      reader.readAsDataURL(file);
     }
     e.target.value = '';
   };
 
-  // Handle Multiple Images Upload (Gallery or Files)
+  // Handle Multiple Images Upload (Gallery or Files with auto-pCloud if available)
   const handleMultipleImagesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+
+    const pcloudLink = activePCloudFolderUrl.trim();
+    if (pcloudLink) {
+      setIsUploadingToPCloud(true);
+      setUploadStatusMsg(`جاري رفع (${files.length}) صورة إلى مجلد pCloud...`);
+    }
 
     const newAttachmentsList: ExpenseAttachment[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
         const compressed = await compressImageFile(file, 1280, 1280, 0.72);
+        const imageBlob = await dataUrlToBlob(compressed);
+        const fileName = file.name || `صورة_${Date.now()}_${i}.jpg`;
+
+        if (pcloudLink) {
+          const uploadResult = await PCloudService.uploadImageToPCloudAndCreateAttachment(
+            pcloudLink,
+            fileName,
+            imageBlob,
+            compressed
+          );
+          if (uploadResult.success && uploadResult.attachment) {
+            newAttachmentsList.push(uploadResult.attachment);
+            continue;
+          }
+        }
+
+        // Local fallback
         newAttachmentsList.push({
           id: `att-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
           url: compressed,
-          fileName: file.name,
+          fileName,
           fileType: 'image',
           fileSize: file.size,
           uploadedAt: new Date().toISOString()
         });
       } catch (err) {
-        console.warn('Compression fallback:', err);
+        console.warn('Compression fallback for file:', file.name, err);
         await new Promise<void>((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => {
@@ -451,6 +532,9 @@ export const ExpenseModal: React.FC = () => {
         });
       }
     }
+
+    setIsUploadingToPCloud(false);
+    setUploadStatusMsg('');
 
     if (newAttachmentsList.length > 0) {
       addAttachments(newAttachmentsList);
@@ -652,7 +736,21 @@ export const ExpenseModal: React.FC = () => {
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar relative">
+          {/* Direct Camera to pCloud Upload Status Indicator */}
+          {isUploadingToPCloud && (
+            <div className="absolute inset-0 bg-white/85 dark:bg-slate-900/85 backdrop-blur-xs z-30 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200">
+              <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400 flex items-center justify-center mb-3 shadow-inner">
+                <Loader2 className="w-7 h-7 animate-spin text-sky-600" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                جاري رفع صورة الكاميرا إلى مجلد pCloud...
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs">
+                {uploadStatusMsg || 'يتم نقل الصورة مباشرة إلى التخزين السحابي وربطها بالمصروف.'}
+              </p>
+            </div>
+          )}
           
           {/* Supervisor Custody Status & Balance Card */}
           <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-3">
